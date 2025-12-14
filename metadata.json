@@ -1,0 +1,5 @@
+{
+  "name": "FIBO Studio",
+  "description": "A prompt-driven 3D virtual photography studio using Gemini to configure studio lighting and generate professional product images.",
+  "requestFramePermissions": []
+}
