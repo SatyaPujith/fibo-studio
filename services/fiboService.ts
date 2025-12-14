@@ -159,11 +159,19 @@ const buildFiboJsonParams = (
   };
 
   const getCameraPosition = (): string => {
-    const h = Math.abs(cameraData.horizontalDeg);
-    if (h < 30) return "front";
-    if (h > 150) return "back";
-    if (h >= 60 && h <= 120) return "side";
-    return "three_quarter";
+    // Use the actual angle (not absolute) to determine left vs right
+    const h = cameraData.horizontalDeg;
+    const absH = Math.abs(h);
+    
+    if (absH < 30) return "front";
+    if (absH > 150) return "back";
+    if (absH >= 60 && absH <= 120) {
+      // Determine left or right side based on sign
+      return h > 0 ? "side_left" : "side_right";
+    }
+    // Three-quarter views
+    if (h > 0) return "three_quarter_left";
+    return "three_quarter_right";
   };
 
   const getShotType = (): string => {
@@ -212,8 +220,10 @@ const buildFiboJsonParams = (
   const positionDescMap: Record<string, string> = {
     "front": "directly from the front",
     "back": "from behind",
-    "side": `from the side (${Math.round(Math.abs(cameraData.horizontalDeg))}° angle)`,
-    "three_quarter": `three-quarter view (${Math.round(Math.abs(cameraData.horizontalDeg))}° from front)`
+    "side_left": `from the left side (${Math.round(Math.abs(cameraData.horizontalDeg))}° angle)`,
+    "side_right": `from the right side (${Math.round(Math.abs(cameraData.horizontalDeg))}° angle)`,
+    "three_quarter_left": `three-quarter view from left (${Math.round(Math.abs(cameraData.horizontalDeg))}° from front)`,
+    "three_quarter_right": `three-quarter view from right (${Math.round(Math.abs(cameraData.horizontalDeg))}° from front)`
   };
 
   const shotDescMap: Record<string, string> = {
@@ -267,10 +277,12 @@ const buildFiboJsonParams = (
     },
 
     // Camera control - using exact values
+    // Map detailed positions back to FIBO-compatible values
     camera: {
       angle: cameraAngle,
       shot_type: shotType,
-      position: cameraPosition
+      position: cameraPosition.includes("side") ? "side" : 
+                cameraPosition.includes("three_quarter") ? "three_quarter" : cameraPosition
     },
 
     // Lighting control

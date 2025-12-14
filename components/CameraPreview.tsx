@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { Environment, ContactShadows } from '@react-three/drei';
 import * as THREE from 'three';
@@ -10,6 +10,13 @@ interface CameraPreviewProps {
   objects: StudioObject[];
   studioCamera: StudioCamera;
   onCapture?: (dataUrl: string) => void;
+}
+
+// Store camera position in a ref to avoid re-renders
+interface CameraState {
+  position: [number, number, number];
+  lookAt: [number, number, number];
+  fov: number;
 }
 
 // Simplified object renderer for preview
@@ -78,54 +85,39 @@ const PreviewObject: React.FC<{ object: StudioObject; platformType: string }> = 
 };
 
 // Camera setup component - sets up camera and keeps it looking at target
+// Uses refs to avoid re-renders during slider adjustments
 const CameraSetup: React.FC<{ 
-  position: [number, number, number]; 
-  lookAt: [number, number, number];
-  fov: number;
+  cameraStateRef: React.MutableRefObject<CameraState>;
   onCapture: (dataUrl: string) => void;
-}> = ({ position, lookAt, fov, onCapture }) => {
+}> = ({ cameraStateRef, onCapture }) => {
   const { camera, gl, scene } = useThree();
-  const captureTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastCaptureRef = useRef<number>(0);
+  const frameCountRef = useRef<number>(0);
   
-  // Set up camera as PerspectiveCamera with correct FOV
-  useEffect(() => {
-    if (camera instanceof THREE.PerspectiveCamera) {
+  // Update camera position and lookAt every frame using ref values (no re-renders)
+  useFrame(() => {
+    const { position, lookAt, fov } = cameraStateRef.current;
+    
+    // Update camera position
+    camera.position.set(position[0], position[1], position[2]);
+    camera.lookAt(lookAt[0], lookAt[1], lookAt[2]);
+    
+    // Update FOV if changed
+    if (camera instanceof THREE.PerspectiveCamera && camera.fov !== fov) {
       camera.fov = fov;
       camera.updateProjectionMatrix();
     }
-  }, [camera, fov]);
-  
-  // Update camera position and lookAt every frame to ensure it's always correct
-  useFrame(() => {
-    camera.position.set(position[0], position[1], position[2]);
-    camera.lookAt(lookAt[0], lookAt[1], lookAt[2]);
-  });
-  
-  // Capture the scene after camera is set up
-  useEffect(() => {
-    // Clear any existing timeout
-    if (captureTimeoutRef.current) {
-      clearTimeout(captureTimeoutRef.current);
-    }
     
-    // Delay capture to ensure scene is fully rendered with correct camera
-    captureTimeoutRef.current = setTimeout(() => {
-      // Ensure camera is positioned correctly before capture
-      camera.position.set(position[0], position[1], position[2]);
-      camera.lookAt(lookAt[0], lookAt[1], lookAt[2]);
-      camera.updateProjectionMatrix();
-      
+    // Capture every 10 frames (throttled) to avoid performance issues
+    frameCountRef.current++;
+    const now = Date.now();
+    if (frameCountRef.current % 10 === 0 && now - lastCaptureRef.current > 100) {
+      lastCaptureRef.current = now;
       gl.render(scene, camera);
       const dataUrl = gl.domElement.toDataURL('image/png');
       onCapture(dataUrl);
-    }, 150);
-    
-    return () => {
-      if (captureTimeoutRef.current) {
-        clearTimeout(captureTimeoutRef.current);
-      }
-    };
-  }, [camera, gl, scene, position, lookAt, onCapture]);
+    }
+  });
 
   return null;
 };
@@ -137,10 +129,24 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({
   onCapture
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const captureRef = useRef<string>('');
+  
+  // Use a ref to store camera state - updates don't cause re-renders
+  const cameraStateRef = useRef<CameraState>({
+    position: studioCamera.position,
+    lookAt: studioCamera.lookAt,
+    fov: studioCamera.fov
+  });
+  
+  // Update the ref when props change (without causing canvas re-render)
+  useEffect(() => {
+    cameraStateRef.current = {
+      position: studioCamera.position,
+      lookAt: studioCamera.lookAt,
+      fov: studioCamera.fov
+    };
+  }, [studioCamera.position, studioCamera.lookAt, studioCamera.fov]);
 
   const handleCapture = (dataUrl: string) => {
-    captureRef.current = dataUrl;
     if (onCapture) {
       onCapture(dataUrl);
     }
@@ -148,8 +154,69 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({
 
   const previewSize = isExpanded ? 'w-80 h-60' : 'w-48 h-36';
 
-  // Create a unique key based on camera position to force re-render when camera moves
-  const canvasKey = `${studioCamera.position.join(',')}-${studioCamera.fov}`;
+  // Memoize canvas to prevent unnecessary re-renders
+  const canvasContent = useMemo(() => (
+    <Canvas
+      shadows
+      dpr={[1, 1.5]}
+      gl={{ preserveDrawingBuffer: true, antialias: true }}
+      style={{ background: config.environment.backgroundColor }}
+      camera={{ 
+        position: [0, 2, 5],
+        fov: 50,
+        near: 0.1,
+        far: 1000
+      }}
+    >
+      {/* Camera setup - handles position, lookAt, and capture using ref */}
+      <CameraSetup 
+        cameraStateRef={cameraStateRef}
+        onCapture={handleCapture}
+      />
+
+      <Environment preset="studio" blur={1} background={false} />
+
+      {/* Lights */}
+      <ambientLight intensity={config.lighting.ambientIntensity} color={config.lighting.ambientColor} />
+      <directionalLight
+        position={config.lighting.keyLightPosition}
+        intensity={config.lighting.keyLightIntensity}
+        color={config.lighting.keyLightColor}
+        castShadow
+      />
+      <pointLight
+        position={config.lighting.fillLightPosition}
+        intensity={config.lighting.fillLightIntensity}
+        color={config.lighting.fillLightColor}
+      />
+
+      {/* Objects */}
+      {objects.map(obj => (
+        <PreviewObject
+          key={obj.id}
+          object={obj}
+          platformType={config.environment.platformType}
+        />
+      ))}
+
+      {/* Floor */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.6, 0]} receiveShadow>
+        <planeGeometry args={[50, 50]} />
+        <meshStandardMaterial
+          color={config.environment.floorColor}
+          roughness={config.environment.floorRoughness}
+        />
+      </mesh>
+
+      <ContactShadows
+        position={[0, -1.55, 0]}
+        opacity={0.5}
+        scale={10}
+        blur={1.5}
+        far={4.5}
+      />
+    </Canvas>
+  ), [config, objects]); // Only re-create canvas when config or objects change, NOT camera
 
   return (
     <div className={`absolute bottom-4 right-4 ${previewSize} bg-zinc-900 rounded-lg border-2 border-indigo-500 overflow-hidden shadow-2xl shadow-indigo-500/20 transition-all duration-300 z-20`}>
@@ -167,70 +234,8 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({
         </button>
       </div>
 
-      {/* 3D Preview Canvas */}
-      <Canvas
-        key={canvasKey}
-        shadows
-        dpr={[1, 1.5]}
-        gl={{ preserveDrawingBuffer: true, antialias: true }}
-        style={{ background: config.environment.backgroundColor }}
-        camera={{ 
-          position: studioCamera.position, 
-          fov: studioCamera.fov,
-          near: 0.1,
-          far: 1000
-        }}
-      >
-        {/* Camera setup - handles position, lookAt, and capture */}
-        <CameraSetup 
-          position={studioCamera.position}
-          lookAt={studioCamera.lookAt}
-          fov={studioCamera.fov}
-          onCapture={handleCapture}
-        />
-
-        <Environment preset="studio" blur={1} background={false} />
-
-        {/* Lights */}
-        <ambientLight intensity={config.lighting.ambientIntensity} color={config.lighting.ambientColor} />
-        <directionalLight
-          position={config.lighting.keyLightPosition}
-          intensity={config.lighting.keyLightIntensity}
-          color={config.lighting.keyLightColor}
-          castShadow
-        />
-        <pointLight
-          position={config.lighting.fillLightPosition}
-          intensity={config.lighting.fillLightIntensity}
-          color={config.lighting.fillLightColor}
-        />
-
-        {/* Objects */}
-        {objects.map(obj => (
-          <PreviewObject
-            key={obj.id}
-            object={obj}
-            platformType={config.environment.platformType}
-          />
-        ))}
-
-        {/* Floor */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.6, 0]} receiveShadow>
-          <planeGeometry args={[50, 50]} />
-          <meshStandardMaterial
-            color={config.environment.floorColor}
-            roughness={config.environment.floorRoughness}
-          />
-        </mesh>
-
-        <ContactShadows
-          position={[0, -1.55, 0]}
-          opacity={0.5}
-          scale={10}
-          blur={1.5}
-          far={4.5}
-        />
-      </Canvas>
+      {/* 3D Preview Canvas - Memoized to prevent re-mounting */}
+      {canvasContent}
 
       {/* Recording indicator */}
       <div className="absolute bottom-1 left-2 flex items-center gap-1">

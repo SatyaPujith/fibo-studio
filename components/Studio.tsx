@@ -244,24 +244,23 @@ export const Studio: React.FC<StudioProps> = ({ project, onUpdateProject, onBack
       const snapshot = cameraPreviewImage || (sceneRef.current?.captureSnapshot() || '');
       
       // Build camera context from studio camera
+      // Note: Negate X to match FIBO's coordinate system (fixes mirror issue)
+      const camX = studioCamera.position[0];
+      const camY = studioCamera.position[1];
+      const camZ = studioCamera.position[2];
+      const camDistance = Math.sqrt(camX ** 2 + camY ** 2 + camZ ** 2);
+      
       const cameraContext = JSON.stringify({
         horizontal: "studio camera view",
         vertical: "studio camera view",
-        distance: Math.sqrt(
-          studioCamera.position[0] ** 2 + 
-          studioCamera.position[1] ** 2 + 
-          studioCamera.position[2] ** 2
-        ),
-        horizontalDeg: Math.round(Math.atan2(studioCamera.position[0], studioCamera.position[2]) * 180 / Math.PI),
-        verticalDeg: Math.round(Math.acos(studioCamera.position[1] / Math.sqrt(
-          studioCamera.position[0] ** 2 + 
-          studioCamera.position[1] ** 2 + 
-          studioCamera.position[2] ** 2
-        )) * 180 / Math.PI),
+        distance: camDistance,
+        // Negate X in atan2 to fix mirroring - FIBO expects opposite handedness
+        horizontalDeg: Math.round(Math.atan2(-camX, camZ) * 180 / Math.PI),
+        verticalDeg: Math.round(Math.acos(camY / camDistance) * 180 / Math.PI),
         position: { 
-          x: studioCamera.position[0], 
-          y: studioCamera.position[1], 
-          z: studioCamera.position[2] 
+          x: camX, 
+          y: camY, 
+          z: camZ 
         }
       });
       
