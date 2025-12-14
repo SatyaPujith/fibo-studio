@@ -147,11 +147,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin, onDemoLogin, onBack
         <button 
           onClick={handleDemoLogin}
           disabled={loading}
-          className="w-full py-3 bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 hover:text-indigo-300 font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+          className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white font-semibold rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <TestTube className="w-4 h-4" />
-          Login as Test User (Demo)
+          <TestTube className="w-4 h-4 text-indigo-400" />
+          Try Demo Mode
         </button>
+        <p className="text-center text-xs text-zinc-500 mt-2">
+          No account needed. Projects saved locally.
+        </p>
 
         <div className="mt-6 text-center text-sm text-zinc-500">
           {isLogin ? "Don't have an account? " : "Already have an account? "}
