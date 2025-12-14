@@ -34,10 +34,10 @@ FIBO Studio bridges the gap between 3D scene composition and AI-powered image ge
 │  └─────────────┘  └─────────────┘  └─────────────────────┘  │
 ├─────────────────────────────────────────────────────────────┤
 │                      Services Layer                         │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │ FIBO Service│  │Gemini Service│ │    API Service      │  │
-│  │(Image Gen)  │  │(Prompt Parse)│ │  (Backend Comm)     │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
+│  ┌─────────────────────────────┐  ┌─────────────────────┐   │
+│  │      FIBO Service           │  │    API Service      │   │
+│  │  (AI Image Generation)      │  │  (Backend Comm)     │   │
+│  └─────────────────────────────┘  └─────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -76,8 +76,8 @@ FIBO Studio bridges the gap between 3D scene composition and AI-powered image ge
 - **bcryptjs** - Password hashing
 
 ### AI Services
-- **BRIA FIBO** - JSON-native image generation
-- **Google Gemini** - Natural language prompt interpretation
+- **BRIA FIBO** - JSON-native photorealistic image generation
+- **Google Gemini** - Natural language prompt interpretation for Studio Director
 
 ## Getting Started
 
@@ -86,8 +86,8 @@ FIBO Studio bridges the gap between 3D scene composition and AI-powered image ge
 - Node.js 18+
 - npm or yarn
 - MongoDB Atlas account (or local MongoDB)
-- BRIA API key ([Get one here](https://bria.ai/))
-- Google Gemini API key ([Get one here](https://ai.google.dev/))
+- BRIA FIBO API key ([Get one here](https://bria.ai/))
+- Google Gemini API key ([Get one here](https://ai.google.dev/)) - for Studio Director
 
 ### Installation
 
@@ -113,7 +113,7 @@ FIBO Studio bridges the gap between 3D scene composition and AI-powered image ge
 
    Create `.env.local` in the root directory:
    ```env
-   # Gemini API Key (for prompt interpretation)
+   # Gemini API Key (for Studio Director - prompt interpretation)
    VITE_GEMINI_API_KEY=your_gemini_api_key
    API_KEY=your_gemini_api_key
 
@@ -232,7 +232,6 @@ fibo-studio/
 ├── services/
 │   ├── apiService.ts       # Backend API client
 │   ├── fiboService.ts      # BRIA FIBO integration
-│   ├── geminiService.ts    # Gemini AI integration
 │   └── storageService.ts   # Local storage
 ├── server/
 │   ├── models/
@@ -287,7 +286,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - [BRIA AI](https://bria.ai/) for the FIBO image generation model
-- [Google](https://ai.google.dev/) for the Gemini API
+- [Google Gemini](https://ai.google.dev/) for natural language understanding
 - [Three.js](https://threejs.org/) and [React Three Fiber](https://docs.pmnd.rs/react-three-fiber) for 3D rendering
 - [Tailwind CSS](https://tailwindcss.com/) for styling
 

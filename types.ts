@@ -29,10 +29,18 @@ export interface ConsistencySettings {
   mode: 'strict_catalog' | 'creative_campaign';
 }
 
+export interface StudioCamera {
+  position: [number, number, number];
+  rotation: [number, number, number];
+  fov: number;
+  lookAt: [number, number, number];
+}
+
 export interface StudioConfig {
   lighting: StudioLighting;
   environment: StudioEnvironment;
   moodDescription: string; // Used for AI generation context
+  studioCamera?: StudioCamera; // Production camera for image generation
 }
 
 export interface ObjectPart {

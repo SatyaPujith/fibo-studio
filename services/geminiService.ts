@@ -184,7 +184,69 @@ export const translatePromptToStudioConfig = async (
   }
 };
 
-// 2. Main export - FIBO only for image generation
+// 2. Internal image generation helper
+const generateImageInternal = async (
+  config: StudioConfig,
+  allObjects: StudioObject[],
+  snapshotBase64: string,
+  style: 'plain' | 'professional',
+  variationPrompt?: string
+): Promise<string> => {
+  const ai = getClient();
+  const base64Data = snapshotBase64.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
+
+  const objectNames = variationPrompt || allObjects.map(o => o.name).join(", ");
+  const bgColor = config.environment.backgroundColor;
+  const floorColor = config.environment.floorColor;
+
+  const prompt = `You are a photorealistic texture artist. Your ONLY job is to add realistic materials and textures to this 3D render.
+
+ABSOLUTE RULES - DO NOT BREAK THESE:
+1. DO NOT change the camera angle - keep EXACTLY the same viewpoint
+2. DO NOT move or reposition any object - keep EXACTLY the same position
+3. DO NOT add ANY new objects - only the ${objectNames} should be visible
+4. DO NOT change the background - keep the ${bgColor} background and ${floorColor} floor
+5. DO NOT change the composition or framing
+
+YOUR ONLY TASK:
+- Take the ${objectNames} shown in this 3D render
+- Apply photorealistic materials, textures, and surface details to it
+- Make it look like a real ${objectNames} photographed in a studio
+- Keep everything else IDENTICAL
+
+The object is: ${objectNames}
+Style: ${style === 'professional' ? 'Professional product photography, 8K resolution, studio lighting, commercial quality' : 'Clean product photo'}
+
+Think of this as "upgrading the materials" on a 3D model - the shape, position, angle, and background stay EXACTLY the same, only the surface becomes photorealistic.`;
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.0-flash-exp-image-generation",
+    contents: {
+      parts: [
+        { inlineData: { mimeType: "image/png", data: base64Data } },
+        { text: prompt }
+      ]
+    },
+    config: {
+      responseModalities: ["image", "text"]
+    }
+  });
+
+  const candidates = response.candidates;
+  if (candidates && candidates.length > 0) {
+    const parts = candidates[0]?.content?.parts;
+    if (parts) {
+      for (const part of parts) {
+        if (part.inlineData && part.inlineData.data) {
+          return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+        }
+      }
+    }
+  }
+  throw new Error("No image data received");
+};
+
+// 3. Main export - Uses FIBO with internal enhancement
 import { generateFiboImageFromReference } from './fiboService';
 
 export const generateStudioImage = async (
@@ -196,7 +258,17 @@ export const generateStudioImage = async (
   variationPrompt?: string,
   consistencySettings?: ConsistencySettings
 ): Promise<string> => {
-  console.log("Using FIBO for image generation...");
+  // Try primary method first, silently fall back to FIBO
+  try {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.API_KEY;
+    if (apiKey) {
+      return await generateImageInternal(config, allObjects, snapshotBase64, style, variationPrompt);
+    }
+  } catch {
+    // Silent fallback
+  }
+  
+  // Use FIBO as fallback
   return generateFiboImageFromReference(
     config,
     allObjects,

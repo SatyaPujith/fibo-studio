@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Project, StudioConfig, StudioObject, GeneratedImage, StudioLighting, StudioEnvironment, ConsistencySettings } from '../types';
+import { Project, StudioConfig, StudioObject, GeneratedImage, StudioLighting, StudioEnvironment, ConsistencySettings, StudioCamera } from '../types';
 import { Scene3D, Scene3DRef } from './Scene3D';
+import { CameraPreview } from './CameraPreview';
 import { translatePromptToStudioConfig, generateStudioImage } from '../services/geminiService';
 import { BatchGenerationDialog } from './BatchGenerationDialog';
 import { MoveObjectDialog } from './MoveObjectDialog';
 import { ProductionSettingsDialog } from './ProductionSettingsDialog';
-import { ArrowLeft, Send, Sparkles, Box, Camera, Download, RefreshCw, LayoutTemplate, Layers, Wand2, Undo2, Redo2, Move, RotateCw, Maximize, MousePointer2, ArrowDownToLine, RefreshCcw, Sun, Palette, Monitor, Trash2, Navigation, Settings2 } from 'lucide-react';
+import { ArrowLeft, Send, Sparkles, Box, Camera, Download, RefreshCw, LayoutTemplate, Wand2, Undo2, Redo2, Move, RotateCw, Maximize, MousePointer2, ArrowDownToLine, RefreshCcw, Sun, Palette, Trash2, Navigation, Settings2, Video } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { DEFAULT_STUDIO_CONFIG } from '../constants';
+import { DEFAULT_STUDIO_CONFIG, DEFAULT_STUDIO_CAMERA } from '../constants';
 
 interface StudioProps {
   project: Project;
@@ -91,6 +92,13 @@ export const Studio: React.FC<StudioProps> = ({ project, onUpdateProject, onBack
   const [images, setImages] = useState<GeneratedImage[]>(project.images);
   const [consistencySettings, setConsistencySettings] = useState<ConsistencySettings>(project.consistencySettings || DEFAULT_CONSISTENCY);
   
+  // Studio Camera state
+  const [studioCamera, setStudioCamera] = useState<StudioCamera>(
+    config.studioCamera || DEFAULT_STUDIO_CAMERA
+  );
+  const [isStudioCameraSelected, setIsStudioCameraSelected] = useState(false);
+  const [cameraPreviewImage, setCameraPreviewImage] = useState<string>('');
+  
   const [prompt, setPrompt] = useState('');
   const [isProcessingPrompt, setIsProcessingPrompt] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string>('');
@@ -106,6 +114,13 @@ export const Studio: React.FC<StudioProps> = ({ project, onUpdateProject, onBack
   const sceneRef = useRef<Scene3DRef>(null);
 
   const activeObject = objects.find(o => o.id === activeObjectId) || objects[0];
+  
+  // Update studio camera in config when it changes
+  const updateStudioCamera = (updates: Partial<StudioCamera>) => {
+    const newCamera = { ...studioCamera, ...updates };
+    setStudioCamera(newCamera);
+    updateConfig({ ...config, studioCamera: newCamera });
+  };
 
   useEffect(() => {
     onUpdateProject({
@@ -222,12 +237,33 @@ export const Studio: React.FC<StudioProps> = ({ project, onUpdateProject, onBack
   };
 
   const handleBatchGenerate = async (prompts: string[]) => {
-    if (!sceneRef.current) return;
     setIsGeneratingImage(true);
     
     try {
-      const snapshot = sceneRef.current.captureSnapshot();
-      const cameraContext = sceneRef.current.getCameraContext();
+      // Use the studio camera preview image for generation (exact camera view)
+      const snapshot = cameraPreviewImage || (sceneRef.current?.captureSnapshot() || '');
+      
+      // Build camera context from studio camera
+      const cameraContext = JSON.stringify({
+        horizontal: "studio camera view",
+        vertical: "studio camera view",
+        distance: Math.sqrt(
+          studioCamera.position[0] ** 2 + 
+          studioCamera.position[1] ** 2 + 
+          studioCamera.position[2] ** 2
+        ),
+        horizontalDeg: Math.round(Math.atan2(studioCamera.position[0], studioCamera.position[2]) * 180 / Math.PI),
+        verticalDeg: Math.round(Math.acos(studioCamera.position[1] / Math.sqrt(
+          studioCamera.position[0] ** 2 + 
+          studioCamera.position[1] ** 2 + 
+          studioCamera.position[2] ** 2
+        )) * 180 / Math.PI),
+        position: { 
+          x: studioCamera.position[0], 
+          y: studioCamera.position[1], 
+          z: studioCamera.position[2] 
+        }
+      });
       
       for (const variantPrompt of prompts) {
         // Use prompt if it's different from object name, else undefined to signal "standard generation"
@@ -299,12 +335,33 @@ export const Studio: React.FC<StudioProps> = ({ project, onUpdateProject, onBack
             </button>
           </div>
           <div className="space-y-2">
+            {/* Studio Camera - Cannot be deleted */}
+            <button
+              onClick={() => {
+                setIsStudioCameraSelected(true);
+                setActiveObjectId('');
+              }}
+              className={`w-full flex items-center gap-3 p-3 rounded-lg text-sm transition-all ${
+                isStudioCameraSelected
+                  ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' 
+                  : 'bg-zinc-800/50 hover:bg-zinc-800 text-zinc-300'
+              }`}
+            >
+              <Video className="w-4 h-4" />
+              <div className="flex-1 text-left truncate">Studio Camera</div>
+              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            </button>
+            
+            {/* Objects */}
             {objects.map(obj => (
               <button
                 key={obj.id}
-                onClick={() => setActiveObjectId(obj.id)}
+                onClick={() => {
+                  setActiveObjectId(obj.id);
+                  setIsStudioCameraSelected(false);
+                }}
                 className={`w-full flex items-center gap-3 p-3 rounded-lg text-sm transition-all ${
-                  obj.id === activeObjectId 
+                  obj.id === activeObjectId && !isStudioCameraSelected
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' 
                     : 'bg-zinc-800/50 hover:bg-zinc-800 text-zinc-300'
                 }`}
@@ -438,9 +495,20 @@ export const Studio: React.FC<StudioProps> = ({ project, onUpdateProject, onBack
               config={config} 
               objects={objects}
               activeObjectId={activeObjectId}
-              onObjectSelect={setActiveObjectId}
+              onObjectSelect={(id) => {
+                setActiveObjectId(id);
+                setIsStudioCameraSelected(false);
+              }}
               transformMode={transformMode}
               onTransformChange={handleTransformChange}
+            />
+            
+            {/* Studio Camera Preview (Picture-in-Picture) */}
+            <CameraPreview
+              config={config}
+              objects={objects}
+              studioCamera={studioCamera}
+              onCapture={setCameraPreviewImage}
             />
             
             {/* Loading Overlay */}
@@ -562,40 +630,178 @@ export const Studio: React.FC<StudioProps> = ({ project, onUpdateProject, onBack
               </div>
           </div>
 
-          {/* OBJECT SETTINGS */}
-          <div className="bg-zinc-800/50 rounded-lg p-3 mb-6">
-            <label className="text-xs font-medium text-zinc-400 mb-2 block uppercase tracking-wider flex items-center gap-2">
-                <Palette className="w-3 h-3" /> Material
-            </label>
-            <div className="space-y-3">
-                <div>
-                    <div className="flex justify-between text-xs mb-1">
-                        <span>Roughness</span>
-                        <span>{(activeObject.roughness ?? 0.5).toFixed(2)}</span>
-                    </div>
-                    <input 
-                        type="range" 
-                        min="0" max="1" step="0.01" 
-                        value={activeObject.roughness ?? 0.5} 
-                        onChange={(e) => handleTransformChange(activeObjectId, { roughness: parseFloat(e.target.value) })}
-                        className="w-full h-1 bg-zinc-600 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                    />
+          {/* STUDIO CAMERA SETTINGS - Show when camera is selected */}
+          {isStudioCameraSelected && (
+            <div className="bg-red-900/20 rounded-lg p-3 mb-6 border border-red-800/50">
+              <label className="text-xs font-medium text-red-400 mb-3 block uppercase tracking-wider flex items-center gap-2">
+                  <Video className="w-3 h-3" /> Studio Camera
+              </label>
+              
+              {/* Camera View Presets - 360° Views */}
+              <div className="mb-4">
+                <div className="text-[10px] text-red-400/80 mb-2 uppercase tracking-wider">Quick Views (360°)</div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button 
+                    onClick={() => updateStudioCamera({ position: [0, 2, 5] })}
+                    className="text-[10px] py-1.5 bg-zinc-800 hover:bg-red-800/50 rounded text-zinc-300 hover:text-white transition-colors"
+                  >
+                    Front
+                  </button>
+                  <button 
+                    onClick={() => updateStudioCamera({ position: [0, 2, -5] })}
+                    className="text-[10px] py-1.5 bg-zinc-800 hover:bg-red-800/50 rounded text-zinc-300 hover:text-white transition-colors"
+                  >
+                    Back
+                  </button>
+                  <button 
+                    onClick={() => updateStudioCamera({ position: [5, 2, 0] })}
+                    className="text-[10px] py-1.5 bg-zinc-800 hover:bg-red-800/50 rounded text-zinc-300 hover:text-white transition-colors"
+                  >
+                    Right
+                  </button>
+                  <button 
+                    onClick={() => updateStudioCamera({ position: [-5, 2, 0] })}
+                    className="text-[10px] py-1.5 bg-zinc-800 hover:bg-red-800/50 rounded text-zinc-300 hover:text-white transition-colors"
+                  >
+                    Left
+                  </button>
+                  <button 
+                    onClick={() => updateStudioCamera({ position: [0, 6, 0.1] })}
+                    className="text-[10px] py-1.5 bg-zinc-800 hover:bg-red-800/50 rounded text-zinc-300 hover:text-white transition-colors"
+                  >
+                    Top
+                  </button>
+                  <button 
+                    onClick={() => updateStudioCamera({ position: [0, -2, 0.1] })}
+                    className="text-[10px] py-1.5 bg-zinc-800 hover:bg-red-800/50 rounded text-zinc-300 hover:text-white transition-colors"
+                  >
+                    Bottom
+                  </button>
+                  <button 
+                    onClick={() => updateStudioCamera({ position: [3.5, 2, 3.5] })}
+                    className="text-[10px] py-1.5 bg-zinc-800 hover:bg-red-800/50 rounded text-zinc-300 hover:text-white transition-colors"
+                  >
+                    3/4 Front
+                  </button>
+                  <button 
+                    onClick={() => updateStudioCamera({ position: [-3.5, 2, -3.5] })}
+                    className="text-[10px] py-1.5 bg-zinc-800 hover:bg-red-800/50 rounded text-zinc-300 hover:text-white transition-colors"
+                  >
+                    3/4 Back
+                  </button>
+                  <button 
+                    onClick={() => updateStudioCamera({ position: [3, 4, 3] })}
+                    className="text-[10px] py-1.5 bg-zinc-800 hover:bg-red-800/50 rounded text-zinc-300 hover:text-white transition-colors"
+                  >
+                    Hero
+                  </button>
                 </div>
-                <div>
-                    <div className="flex justify-between text-xs mb-1">
-                        <span>Metalness</span>
-                        <span>{(activeObject.metalness ?? 0.5).toFixed(2)}</span>
-                    </div>
-                     <input 
-                        type="range" 
-                        min="0" max="1" step="0.01" 
-                        value={activeObject.metalness ?? 0.5} 
-                        onChange={(e) => handleTransformChange(activeObjectId, { metalness: parseFloat(e.target.value) })}
-                        className="w-full h-1 bg-zinc-600 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                    />
-                </div>
+              </div>
+
+              {/* Fine-tune controls */}
+              <div className="space-y-3 pt-3 border-t border-red-800/30">
+                  <div className="text-[10px] text-red-400/80 uppercase tracking-wider">Fine Tune</div>
+                  <div>
+                      <div className="flex justify-between text-xs mb-1">
+                          <span>Position X</span>
+                          <span>{studioCamera.position[0].toFixed(1)}</span>
+                      </div>
+                      <input 
+                          type="range" 
+                          min="-10" max="10" step="0.1"
+                          value={studioCamera.position[0]}
+                          onChange={(e) => updateStudioCamera({ 
+                            position: [parseFloat(e.target.value), studioCamera.position[1], studioCamera.position[2]] 
+                          })}
+                          className="w-full h-1 bg-zinc-600 rounded-lg appearance-none cursor-pointer accent-red-500"
+                      />
+                  </div>
+                  <div>
+                      <div className="flex justify-between text-xs mb-1">
+                          <span>Position Y (Height)</span>
+                          <span>{studioCamera.position[1].toFixed(1)}</span>
+                      </div>
+                      <input 
+                          type="range" 
+                          min="-5" max="10" step="0.1"
+                          value={studioCamera.position[1]}
+                          onChange={(e) => updateStudioCamera({ 
+                            position: [studioCamera.position[0], parseFloat(e.target.value), studioCamera.position[2]] 
+                          })}
+                          className="w-full h-1 bg-zinc-600 rounded-lg appearance-none cursor-pointer accent-red-500"
+                      />
+                  </div>
+                  <div>
+                      <div className="flex justify-between text-xs mb-1">
+                          <span>Position Z</span>
+                          <span>{studioCamera.position[2].toFixed(1)}</span>
+                      </div>
+                      <input 
+                          type="range" 
+                          min="-10" max="10" step="0.1"
+                          value={studioCamera.position[2]}
+                          onChange={(e) => updateStudioCamera({ 
+                            position: [studioCamera.position[0], studioCamera.position[1], parseFloat(e.target.value)] 
+                          })}
+                          className="w-full h-1 bg-zinc-600 rounded-lg appearance-none cursor-pointer accent-red-500"
+                      />
+                  </div>
+                  <div className="pt-2 border-t border-red-800/30">
+                      <div className="flex justify-between text-xs mb-1">
+                          <span>FOV</span>
+                          <span>{studioCamera.fov}°</span>
+                      </div>
+                      <input 
+                          type="range" 
+                          min="20" max="120" step="1"
+                          value={studioCamera.fov}
+                          onChange={(e) => updateStudioCamera({ fov: parseInt(e.target.value) })}
+                          className="w-full h-1 bg-zinc-600 rounded-lg appearance-none cursor-pointer accent-red-500"
+                      />
+                  </div>
+              </div>
+              <p className="text-[10px] text-red-400/60 mt-2">
+                Images are generated from this camera's view
+              </p>
             </div>
-          </div>
+          )}
+
+          {/* OBJECT SETTINGS - Show when object is selected */}
+          {!isStudioCameraSelected && activeObject && (
+            <div className="bg-zinc-800/50 rounded-lg p-3 mb-6">
+              <label className="text-xs font-medium text-zinc-400 mb-2 block uppercase tracking-wider flex items-center gap-2">
+                  <Palette className="w-3 h-3" /> Material
+              </label>
+              <div className="space-y-3">
+                  <div>
+                      <div className="flex justify-between text-xs mb-1">
+                          <span>Roughness</span>
+                          <span>{(activeObject.roughness ?? 0.5).toFixed(2)}</span>
+                      </div>
+                      <input 
+                          type="range" 
+                          min="0" max="1" step="0.01" 
+                          value={activeObject.roughness ?? 0.5} 
+                          onChange={(e) => handleTransformChange(activeObjectId, { roughness: parseFloat(e.target.value) })}
+                          className="w-full h-1 bg-zinc-600 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                      />
+                  </div>
+                  <div>
+                      <div className="flex justify-between text-xs mb-1">
+                          <span>Metalness</span>
+                          <span>{(activeObject.metalness ?? 0.5).toFixed(2)}</span>
+                      </div>
+                       <input 
+                          type="range" 
+                          min="0" max="1" step="0.01" 
+                          value={activeObject.metalness ?? 0.5} 
+                          onChange={(e) => handleTransformChange(activeObjectId, { metalness: parseFloat(e.target.value) })}
+                          className="w-full h-1 bg-zinc-600 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                      />
+                  </div>
+              </div>
+            </div>
+          )}
           
           <div className="space-y-3">
              {/* Style Selector */}

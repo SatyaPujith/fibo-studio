@@ -1,5 +1,5 @@
-import React, { useRef, useImperativeHandle, forwardRef, useEffect, useState } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import React, { useRef, useImperativeHandle, forwardRef, useEffect } from 'react';
+import { Canvas, useThree } from '@react-three/fiber';
 import { ContactShadows, OrbitControls, PerspectiveCamera, Grid, Environment, TransformControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { StudioConfig, StudioObject, ObjectPart } from '../types';
@@ -261,7 +261,7 @@ const SceneHandler = forwardRef((props, ref) => {
 });
 
 export const Scene3D = forwardRef<Scene3DRef, SceneProps>(({ config, objects, activeObjectId, onObjectSelect, transformMode, onTransformChange }, ref) => {
-  const sceneHandlerRef = useRef<{ capture: () => string; getCameraContext: () => string }>(null);
+  const sceneHandlerRef = useRef<{ capture: () => string; getCameraContext: () => string; getCameraPosition: () => [number, number, number] }>(null);
   const orbitControlsRef = useRef<any>(null);
   const objectRefs = useRef<Record<string, THREE.Object3D>>({});
 
@@ -277,6 +277,12 @@ export const Scene3D = forwardRef<Scene3DRef, SceneProps>(({ config, objects, ac
             return sceneHandlerRef.current.getCameraContext();
         }
         return 'Front View';
+    },
+    getCameraPosition: () => {
+        if (sceneHandlerRef.current) {
+            return sceneHandlerRef.current.getCameraPosition();
+        }
+        return [0, 2, 6];
     }
   }));
 
@@ -325,8 +331,8 @@ export const Scene3D = forwardRef<Scene3DRef, SceneProps>(({ config, objects, ac
         <PerspectiveCamera makeDefault position={[0, 2, 6]} fov={50} />
         <OrbitControls 
             ref={orbitControlsRef}
-            minPolarAngle={0} 
-            maxPolarAngle={Math.PI / 2} 
+            minPolarAngle={0.1}           // Allow looking from almost directly above
+            maxPolarAngle={Math.PI - 0.1} // Allow looking from almost directly below
             enablePan={true}
             makeDefault
         />

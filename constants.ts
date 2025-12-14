@@ -1,6 +1,13 @@
 
-import { StudioConfig, StudioObject } from './types';
+import { StudioConfig, StudioObject, StudioCamera } from './types';
 import { v4 as uuidv4 } from 'uuid';
+
+export const DEFAULT_STUDIO_CAMERA: StudioCamera = {
+  position: [0, 2, 5],
+  rotation: [0, 0, 0],
+  fov: 50,
+  lookAt: [0, 0, 0]
+};
 
 export const DEFAULT_STUDIO_CONFIG: StudioConfig = {
   moodDescription: "Neutral clean studio lighting",
@@ -24,7 +31,8 @@ export const DEFAULT_STUDIO_CONFIG: StudioConfig = {
     platformType: 'none',
     platformColor: '#333333',
     platformMaterial: 'matte'
-  }
+  },
+  studioCamera: DEFAULT_STUDIO_CAMERA
 };
 
 export const INITIAL_OBJECT: StudioObject = {
