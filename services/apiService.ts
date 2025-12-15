@@ -20,26 +20,59 @@ export const setAuthToken = (token: string | null) => {
 
 export const getAuthToken = () => authToken;
 
-// API request helper
-const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
+// User data management (for faster session restore)
+export const setStoredUser = (user: { id: string; name: string; email: string; isDemo: boolean } | null) => {
+  if (user) {
+    localStorage.setItem('fibo_user', JSON.stringify(user));
+  } else {
+    localStorage.removeItem('fibo_user');
+  }
+};
+
+export const getStoredUser = (): { id: string; name: string; email: string; isDemo: boolean } | null => {
+  try {
+    const stored = localStorage.getItem('fibo_user');
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+};
+
+// API request helper with timeout
+const apiRequest = async (endpoint: string, options: RequestInit = {}, timeoutMs: number = 15000) => {
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...(authToken && { Authorization: `Bearer ${authToken}` }),
     ...options.headers
   };
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers
-  });
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  const data = await response.json();
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+      signal: controller.signal
+    });
 
-  if (!response.ok) {
-    throw new Error(data.error || 'API request failed');
+    clearTimeout(timeoutId);
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'API request failed');
+    }
+
+    return data;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Request timed out. Server may be starting up, please try again.');
+    }
+    throw error;
   }
-
-  return data;
 };
 
 // ============ AUTH API ============
@@ -61,6 +94,7 @@ export const authAPI = {
       body: JSON.stringify({ name, email, password })
     });
     setAuthToken(data.token);
+    setStoredUser(data.user);
     return data;
   },
 
@@ -70,6 +104,7 @@ export const authAPI = {
       body: JSON.stringify({ email, password })
     });
     setAuthToken(data.token);
+    setStoredUser(data.user);
     return data;
   },
 
@@ -78,6 +113,7 @@ export const authAPI = {
       method: 'POST'
     });
     setAuthToken(data.token);
+    setStoredUser(data.user);
     return data;
   },
 
@@ -87,6 +123,7 @@ export const authAPI = {
 
   logout: () => {
     setAuthToken(null);
+    setStoredUser(null);
   }
 };
 

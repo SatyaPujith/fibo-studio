@@ -7,7 +7,7 @@ import { Project, ViewMode, User } from './types';
 import { loadProjects, saveProjects } from './services/storageService';
 import { v4 as uuidv4 } from 'uuid';
 import { DEFAULT_STUDIO_CONFIG, INITIAL_OBJECT } from './constants';
-import { authAPI, getAuthToken, projectsAPI, checkBackendConnection } from './services/apiService';
+import { authAPI, getAuthToken, getStoredUser, projectsAPI, checkBackendConnection } from './services/apiService';
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewMode>('landing');
@@ -20,7 +20,20 @@ const App: React.FC = () => {
   useEffect(() => {
     const checkSession = async () => {
       const token = getAuthToken();
-      if (token) {
+      const storedUser = getStoredUser();
+      
+      if (token && storedUser) {
+        // Immediately restore session from localStorage (fast!)
+        setUser(storedUser);
+        setView('dashboard');
+        
+        // Verify token in background (don't block UI)
+        authAPI.getMe().catch(() => {
+          // Token invalid, but don't logout immediately - let user continue
+          console.log('Token verification failed, will require re-login on next action');
+        });
+      } else if (token) {
+        // Have token but no stored user - need to fetch
         try {
           const response = await authAPI.getMe();
           setUser(response.user);

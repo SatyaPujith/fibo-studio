@@ -104,29 +104,36 @@ export const translatePromptToStudioConfig = async (
     
     TASK 2: 3D Object Construction (Constructive Solid Geometry)
     - Build DETAILED realistic 3D silhouettes using 5-20 primitives.
-    - **KITBASHING RULES**:
-      - Use **Cylinders** for lenses, buttons, wires, handles.
-      - Use **Toruses** for rings, rims, tires, cushions.
-      - Use **Spheres** for bulbs, joints, rounded caps.
-      - Use **Cubes** (scaled thin) for panels, screens, bases.
     
-    - **REALISM GOAL**: The object blockout must look convincing in the viewport. Don't be lazy with 2 cubes. 
-      - A camera needs: Body, Lens Barrel, Lens Glass, Flash, Shutter Button, Grip, Viewfinder. (7+ parts)
-      - A sneaker needs: Sole, Heel, Main body, Tongue, Laces (abstracted).
+    **CRITICAL ORIENTATION RULE**:
+    - The FRONT of the object MUST face the POSITIVE Z direction (towards the camera at [0,0,5])
+    - For vehicles (cars, trucks, buses): The front grille/headlights face +Z
+    - For furniture (beds, sofas): The front/seating area faces +Z
+    - For electronics (TV, monitor): The screen faces +Z
+    - The object's LENGTH should be along the X-axis, HEIGHT along Y-axis
+    - This ensures when camera is at "Front" position, user sees the object's FRONT
+    
+    **KITBASHING RULES**:
+      - Use **Cylinders** for lenses, buttons, wires, handles, wheels.
+      - Use **Toruses** for rings, rims, tires, cushions.
+      - Use **Spheres** for bulbs, joints, rounded caps, headlights.
+      - Use **Cubes** (scaled thin) for panels, screens, bases, body panels.
+    
+    - **REALISM GOAL**: The object blockout must look convincing in the viewport.
+      - A car needs: Body, Hood, Roof, Windows, Wheels (4), Headlights, Grille. (10+ parts)
+      - A truck needs: Cab, Trailer, Wheels (6+), Headlights, Grille. (12+ parts)
     
     EXAMPLES:
-    - "Vintage Camera":
-      1. Cube (Body), Black Leather, Scale [1.5, 1.0, 0.5]
-      2. Cylinder (Lens Base), Silver, Rotated [90,0,0], Position [0,0,0.3], Scale [0.7,0.2,0.7]
-      3. Cylinder (Lens Glass), Black, Rotated [90,0,0], Position [0,0,0.4], Scale [0.5,0.05,0.5]
-      4. Cube (Flash), Silver, Position [0.5,0.6,0], Scale [0.3,0.3,0.3]
-      5. Cylinder (Button), Red, Position [-0.5,0.6,0], Scale [0.1,0.1,0.1]
-      6. Cube (Viewfinder), Black, Position [0,0.6,0], Scale [0.2,0.2,0.2]
+    - "Car" (FRONT faces +Z):
+      1. Cube (Body), Scale [2, 0.5, 1], Position [0, 0.5, 0] - length along X
+      2. Cube (Hood), Scale [0.8, 0.2, 0.5], Position [0, 0.6, 0.5] - front at +Z
+      3. Cylinder (Wheel FL), Scale [0.3, 0.1, 0.3], Rotation [0, 0, 1.57], Position [-0.7, 0.2, 0.3]
+      4. Sphere (Headlight L), Scale [0.1, 0.1, 0.1], Position [-0.3, 0.5, 0.5] - at front (+Z)
       
     RULES:
     - Use 'compound' type implicitly by providing 'parts'.
     - Colors should be realistic hex codes.
-    - If user asks for "realistic", add small details (buttons, knobs, feet).
+    - ALWAYS orient objects so their FRONT faces +Z direction.
     - If the user just moves/rotates the existing object, set action="UPDATE".
   `;
 
@@ -258,17 +265,26 @@ export const generateStudioImage = async (
   variationPrompt?: string,
   consistencySettings?: ConsistencySettings
 ): Promise<string> => {
-  // Try primary method first, silently fall back to FIBO
+  // Try Gemini first (image-to-image - preserves camera angle!)
   try {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.API_KEY;
-    if (apiKey) {
-      return await generateImageInternal(config, allObjects, snapshotBase64, style, variationPrompt);
+    if (apiKey && snapshotBase64 && snapshotBase64.length > 100) {
+      console.log("🎯 Trying Gemini image-to-image (preserves camera angle)...");
+      const result = await generateImageInternal(config, allObjects, snapshotBase64, style, variationPrompt);
+      console.log("✅ Gemini succeeded! Camera angle preserved.");
+      return result;
     }
-  } catch {
-    // Silent fallback
+  } catch (error: any) {
+    // Log the error so user knows why it failed
+    console.warn("⚠️ Gemini failed:", error?.message || error);
+    if (error?.message?.includes("quota") || error?.message?.includes("429")) {
+      console.warn("💡 Gemini quota exceeded. Falling back to FIBO (text-to-image).");
+      console.warn("⚠️ Note: FIBO text-to-image may not match exact camera angle.");
+    }
   }
   
-  // Use FIBO as fallback
+  // Use FIBO as fallback (text-to-image - camera angle is approximate)
+  console.log("📷 Using FIBO text-to-image (camera angle from prompt description)...");
   return generateFiboImageFromReference(
     config,
     allObjects,

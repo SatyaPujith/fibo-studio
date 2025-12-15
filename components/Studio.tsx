@@ -243,25 +243,75 @@ export const Studio: React.FC<StudioProps> = ({ project, onUpdateProject, onBack
       // Use the studio camera preview image for generation (exact camera view)
       const snapshot = cameraPreviewImage || (sceneRef.current?.captureSnapshot() || '');
       
+      // Log snapshot info for debugging
+      console.log("📸 Snapshot captured:", snapshot ? `${snapshot.length} chars` : 'EMPTY');
+      if (snapshot && snapshot.length > 100) {
+        console.log("📸 Snapshot preview:", snapshot.substring(0, 50) + "...");
+      }
+      
       // Build camera context from studio camera
-      // Note: Negate X to match FIBO's coordinate system (fixes mirror issue)
+      // Use a SIMPLE approach: detect which preset view is closest
       const camX = studioCamera.position[0];
       const camY = studioCamera.position[1];
       const camZ = studioCamera.position[2];
       const camDistance = Math.sqrt(camX ** 2 + camY ** 2 + camZ ** 2);
       
-      const cameraContext = JSON.stringify({
-        horizontal: "studio camera view",
-        vertical: "studio camera view",
-        distance: camDistance,
-        // Negate X in atan2 to fix mirroring - FIBO expects opposite handedness
-        horizontalDeg: Math.round(Math.atan2(-camX, camZ) * 180 / Math.PI),
-        verticalDeg: Math.round(Math.acos(camY / camDistance) * 180 / Math.PI),
-        position: { 
-          x: camX, 
-          y: camY, 
-          z: camZ 
+      // Define preset positions and their view names
+      const presets = [
+        { name: 'front', pos: [0, 2, 5], desc: 'front view, facing camera directly' },
+        { name: 'back', pos: [0, 2, -5], desc: 'rear view, from behind' },
+        { name: 'right', pos: [5, 2, 0], desc: 'right side profile view' },
+        { name: 'left', pos: [-5, 2, 0], desc: 'left side profile view' },
+        { name: 'top', pos: [0, 6, 0.1], desc: 'top-down bird eye view' },
+        { name: 'bottom', pos: [0, -2, 0.1], desc: 'low angle from below' },
+        { name: '3/4_front_right', pos: [3.5, 2, 3.5], desc: 'three-quarter front right view' },
+        { name: '3/4_back_left', pos: [-3.5, 2, -3.5], desc: 'three-quarter back left view' },
+        { name: 'hero', pos: [3, 4, 3], desc: 'hero shot, elevated three-quarter view' },
+      ];
+      
+      // Find closest preset by normalizing positions and comparing angles
+      const normalizeVec = (v: number[]) => {
+        const len = Math.sqrt(v[0]**2 + v[1]**2 + v[2]**2);
+        return len > 0 ? [v[0]/len, v[1]/len, v[2]/len] : [0, 0, 1];
+      };
+      
+      const camNorm = normalizeVec([camX, camY, camZ]);
+      
+      let closestPreset = presets[0];
+      let closestDot = -2;
+      
+      for (const preset of presets) {
+        const presetNorm = normalizeVec(preset.pos);
+        // Dot product = cosine of angle between vectors (1 = same direction)
+        const dot = camNorm[0]*presetNorm[0] + camNorm[1]*presetNorm[1] + camNorm[2]*presetNorm[2];
+        if (dot > closestDot) {
+          closestDot = dot;
+          closestPreset = preset;
         }
+      }
+      
+      // Determine vertical angle
+      const verticalAngle = Math.acos(camY / camDistance) * 180 / Math.PI;
+      let verticalDesc = 'eye level';
+      if (verticalAngle < 45) verticalDesc = 'high angle, looking down';
+      else if (verticalAngle > 120) verticalDesc = 'low angle, looking up';
+      
+      // Determine shot type from distance
+      let shotType = 'medium shot';
+      if (camDistance < 3) shotType = 'close-up';
+      else if (camDistance > 7) shotType = 'wide shot';
+      
+      console.log(`📷 Camera Analysis: Closest to "${closestPreset.name}" (dot=${closestDot.toFixed(2)})`);
+      console.log(`   Position: [${camX.toFixed(1)}, ${camY.toFixed(1)}, ${camZ.toFixed(1)}], Distance: ${camDistance.toFixed(1)}`);
+      
+      const cameraContext = JSON.stringify({
+        viewName: closestPreset.name,
+        viewDescription: closestPreset.desc,
+        verticalDesc: verticalDesc,
+        shotType: shotType,
+        distance: camDistance,
+        position: { x: camX, y: camY, z: camZ },
+        confidence: closestDot
       });
       
       for (const variantPrompt of prompts) {
