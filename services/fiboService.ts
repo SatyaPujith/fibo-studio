@@ -319,7 +319,7 @@ const buildFiboJsonParams = (
 
 
 /**
- * Main generation function - sends JSON to FIBO
+ * Main generation function - sends JSON to FIBO via backend proxy
  */
 export const generateFiboImageFromReference = async (
   config: StudioConfig,
@@ -330,8 +330,6 @@ export const generateFiboImageFromReference = async (
   variationPrompt?: string,
   _consistencySettings?: ConsistencySettings
 ): Promise<string> => {
-  const apiKey = getFiboApiKey();
-  
   // Build FIBO JSON parameters
   const fiboParams = buildFiboJsonParams(config, allObjects, style, cameraContext, variationPrompt);
 
@@ -341,28 +339,35 @@ export const generateFiboImageFromReference = async (
   console.log("FIBO JSON Params:", JSON.stringify(fiboParams, null, 2));
 
   try {
-    // Send JSON to FIBO API
-    const response = await fetch(`${FIBO_API_BASE}/text-to-image/base/2.3`, {
+    // Get auth token from localStorage (optional for guest mode)
+    const token = localStorage.getItem('token');
+    
+    // Send JSON to backend proxy
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    
+    // Add authorization header only if token exists (for authenticated users)
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    const response = await fetch(`${apiUrl}/images/generate-fibo`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api_token': apiKey
-      },
+      headers,
       body: JSON.stringify(fiboParams)
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("FIBO Error:", response.status, errorText);
+      console.error("Backend Error:", response.status, errorText);
       
       // If JSON params not supported, try with just prompt
       console.log("Trying with simplified prompt...");
-      const fallbackResponse = await fetch(`${FIBO_API_BASE}/text-to-image/base/2.3`, {
+      const fallbackResponse = await fetch(`${apiUrl}/images/generate-fibo`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'api_token': apiKey
-        },
+        headers,
         body: JSON.stringify({
           prompt: fiboParams.prompt,
           num_results: 1,
@@ -371,7 +376,7 @@ export const generateFiboImageFromReference = async (
       });
 
       if (!fallbackResponse.ok) {
-        throw new Error(`FIBO API error: ${response.status}`);
+        throw new Error(`Backend API error: ${response.status}`);
       }
 
       const fallbackData: FiboResponse = await fallbackResponse.json();

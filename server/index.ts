@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 
 import authRoutes from './routes/auth.js';
 import projectRoutes from './routes/projects.js';
+import imageRoutes from './routes/images.js';
 
 // Load environment variables
 dotenv.config();
@@ -15,6 +16,7 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 const allowedOrigins = [
   'http://localhost:3000',
+  'http://localhost:5000',
   'https://fibo-studio.onrender.com',
   process.env.FRONTEND_URL
 ].filter(Boolean);
@@ -39,6 +41,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
+app.use('/api/images', imageRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
