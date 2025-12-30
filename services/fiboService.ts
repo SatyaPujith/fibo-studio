@@ -101,7 +101,7 @@ const hexToColorName = (hex: string): string => {
 
 /**
  * Convert studio config to FIBO JSON parameters
- * Optimized for exact scene reproduction
+ * Optimized for exact scene reproduction with precise spatial understanding
  */
 const buildFiboJsonParams = (
   config: StudioConfig,
@@ -134,7 +134,6 @@ const buildFiboJsonParams = (
   let objectPose = "";
   if (mainObject) {
     const [rx, ry, rz] = mainObject.rotation;
-    // Convert radians to degrees for better understanding
     const rxDeg = Math.round((rx * 180) / Math.PI);
     const ryDeg = Math.round((ry * 180) / Math.PI);
     const rzDeg = Math.round((rz * 180) / Math.PI);
@@ -148,54 +147,98 @@ const buildFiboJsonParams = (
     }
   }
 
-  // Convert camera angles to FIBO format with exact degrees
-  const getCameraAngle = (): string => {
+  // Determine camera view type based on angles
+  const getCameraViewType = (): string => {
+    const h = Math.abs(cameraData.horizontalDeg);
     const v = cameraData.verticalDeg;
-    if (v < 30) return "bird_eye";
-    if (v < 60) return "high_angle";
-    if (v > 120) return "worm_eye";
-    if (v > 100) return "low_angle";
-    return "eye_level";
+    
+    // Vertical view classification
+    if (v < 30) return "TOP_DOWN";
+    if (v < 60) return "HIGH_ANGLE";
+    if (v > 120) return "WORM_EYE";
+    if (v > 100) return "LOW_ANGLE";
+    return "EYE_LEVEL";
   };
 
-  const getCameraPosition = (): string => {
-    // Use the actual angle (not absolute) to determine left vs right
+  // Determine horizontal view direction
+  const getHorizontalView = (): string => {
     const h = cameraData.horizontalDeg;
     const absH = Math.abs(h);
     
-    if (absH < 30) return "front";
-    if (absH > 150) return "back";
-    if (absH >= 60 && absH <= 120) {
-      // Determine left or right side based on sign
-      return h > 0 ? "side_left" : "side_right";
+    if (absH < 15) return "FRONT";
+    if (absH > 165) return "BACK";
+    if (absH >= 75 && absH <= 105) {
+      return h > 0 ? "LEFT_SIDE" : "RIGHT_SIDE";
     }
-    // Three-quarter views
-    if (h > 0) return "three_quarter_left";
-    return "three_quarter_right";
+    if (h > 0) return "FRONT_LEFT_ANGLE";
+    return "FRONT_RIGHT_ANGLE";
   };
 
-  const getShotType = (): string => {
-    const d = cameraData.distance;
-    if (d < 3) return "close_up";
-    if (d < 5) return "medium_shot";
-    if (d < 8) return "full_shot";
-    return "wide_shot";
-  };
+  const viewType = getCameraViewType();
+  const horizontalView = getHorizontalView();
+  const distance = cameraData.distance;
 
-  // Convert lighting to FIBO format
-  const getLightingType = (): string => {
-    const intensity = config.lighting.keyLightIntensity;
-    if (intensity > 1.5) return "dramatic";
-    if (intensity < 0.5) return "soft";
-    return "studio";
-  };
+  // Build detailed spatial description
+  const getSpatialDescription = (): string => {
+    const parts: string[] = [];
+    
+    // Camera position relative to object
+    const camPos = cameraData.position;
+    
+    if (viewType === "TOP_DOWN") {
+      parts.push("Camera positioned directly above the object, looking straight down");
+      parts.push("Object is centered below the camera");
+      parts.push("Show the top surface of the object clearly");
+    } else if (viewType === "HIGH_ANGLE") {
+      parts.push(`Camera positioned above and in front of the object at ${cameraData.verticalDeg}° angle`);
+      parts.push("Object is below and in front of the camera");
+      parts.push("Show top and front surfaces of the object");
+    } else if (viewType === "EYE_LEVEL") {
+      parts.push("Camera positioned at eye level with the object");
+      parts.push("Object is directly in front of the camera");
+      parts.push("Show the front-facing surface of the object");
+    } else if (viewType === "LOW_ANGLE") {
+      parts.push(`Camera positioned below the object at ${180 - cameraData.verticalDeg}° angle`);
+      parts.push("Object is above and in front of the camera");
+      parts.push("Show bottom and front surfaces of the object");
+    }
 
-  const getLightingDirection = (): string => {
-    const [x, y, z] = config.lighting.keyLightPosition;
-    if (y > 4) return "top";
-    if (Math.abs(x) > Math.abs(z)) return "side";
-    if (z < 0) return "back";
-    return "front";
+    // Horizontal positioning
+    if (horizontalView === "FRONT") {
+      parts.push("Camera is directly in front of the object");
+      parts.push("Object faces the camera");
+    } else if (horizontalView === "LEFT_SIDE") {
+      parts.push("Camera is positioned to the LEFT side of the object");
+      parts.push("Object's left side faces the camera");
+      parts.push("Show the left profile of the object");
+    } else if (horizontalView === "RIGHT_SIDE") {
+      parts.push("Camera is positioned to the RIGHT side of the object");
+      parts.push("Object's right side faces the camera");
+      parts.push("Show the right profile of the object");
+    } else if (horizontalView === "BACK") {
+      parts.push("Camera is positioned behind the object");
+      parts.push("Object's back faces the camera");
+      parts.push("Show the back of the object");
+    } else if (horizontalView === "FRONT_LEFT_ANGLE") {
+      parts.push(`Camera is at a front-left angle (${cameraData.horizontalDeg}° from front)`);
+      parts.push("Show both front and left surfaces of the object");
+    } else if (horizontalView === "FRONT_RIGHT_ANGLE") {
+      parts.push(`Camera is at a front-right angle (${Math.abs(cameraData.horizontalDeg)}° from front)`);
+      parts.push("Show both front and right surfaces of the object");
+    }
+
+    // Distance/framing
+    if (distance < 3) {
+      parts.push("Close-up shot - object fills most of the frame");
+    } else if (distance < 5) {
+      parts.push("Medium shot - object with some space around it");
+    } else if (distance < 8) {
+      parts.push("Full shot - complete object visible with environment");
+    } else {
+      parts.push("Wide shot - object with significant space and environment visible");
+    }
+
+    return parts.join(". ");
   };
 
   // Get color names for better prompt understanding
@@ -203,63 +246,50 @@ const buildFiboJsonParams = (
   const floorColorName = hexToColorName(config.environment.floorColor);
   const objectColorName = mainObject ? hexToColorName(mainObject.color) : "neutral";
 
-  // Get camera descriptions
-  const cameraAngle = getCameraAngle();
-  const cameraPosition = getCameraPosition();
-  const shotType = getShotType();
-  
-  // Precise angle descriptions with degrees
-  const angleDescMap: Record<string, string> = {
-    "bird_eye": `top-down view (${Math.round(cameraData.verticalDeg)}° from above)`,
-    "high_angle": `high angle looking down (${Math.round(cameraData.verticalDeg)}° elevation)`,
-    "eye_level": `straight-on eye level view`,
-    "low_angle": `low angle looking up (${Math.round(cameraData.verticalDeg)}° from ground)`,
-    "worm_eye": `extreme low angle from below`
-  };
-
-  const positionDescMap: Record<string, string> = {
-    "front": "directly from the front",
-    "back": "from behind",
-    "side_left": `from the left side (${Math.round(Math.abs(cameraData.horizontalDeg))}° angle)`,
-    "side_right": `from the right side (${Math.round(Math.abs(cameraData.horizontalDeg))}° angle)`,
-    "three_quarter_left": `three-quarter view from left (${Math.round(Math.abs(cameraData.horizontalDeg))}° from front)`,
-    "three_quarter_right": `three-quarter view from right (${Math.round(Math.abs(cameraData.horizontalDeg))}° from front)`
-  };
-
-  const shotDescMap: Record<string, string> = {
-    "close_up": "close-up shot filling the frame",
-    "medium_shot": "medium shot with some space around",
-    "full_shot": "full shot showing complete object",
-    "wide_shot": "wide shot with environment visible"
-  };
-
   // Build the most precise prompt possible
   const promptParts = [
-    // Subject - EXACT specification
-    `Single ${objectName}`,
+    // CRITICAL: Object name MUST be first and clear
+    `Generate a ${objectName}`,
+    
+    // CRITICAL: Spatial positioning - MUST be enforced
+    `[SPATIAL CONSTRAINT] ${getSpatialDescription()}`,
+    
+    // CRITICAL: View type enforcement
+    `[VIEW TYPE] ${viewType} view from ${horizontalView} angle`,
+    
+    // Subject details
     objectColorName !== "neutral" ? `${objectColorName} colored` : "",
     objectOrientation !== "upright" ? objectPose : "standing upright",
     
-    // Camera - EXACT specification
-    angleDescMap[cameraAngle],
-    positionDescMap[cameraPosition],
-    shotDescMap[shotType],
+    // Background - EXACT specification for studio
+    bgColorName === 'white' || bgColorName === 'light gray'
+      ? 'pure white studio background, clean white cyclorama, no shadows on background'
+      : `solid ${bgColorName} background`,
+    floorColorName === 'white' || floorColorName === 'light gray'
+      ? 'white studio floor, seamless white surface'
+      : `${floorColorName} floor surface`,
     
-    // Background - EXACT specification
-    `solid ${bgColorName} background`,
-    `${floorColorName} floor surface`,
-    
-    // Style
+    // Studio lighting - CRITICAL for consistency
     style === 'professional' 
-      ? 'professional product photography, photorealistic rendering, 8K resolution, studio lighting, commercial quality'
-      : 'clean product photograph, simple lighting',
+      ? 'professional studio product photography, three-point lighting setup, key light from front-left, fill light from front-right, back light for separation, photorealistic rendering, 8K resolution, commercial quality, perfectly lit, studio environment, white cyclorama background, clean shadows, professional lighting'
+      : 'clean studio product photograph, soft studio lighting, white background, simple professional lighting, well-lit, studio environment',
     
-    // Negative guidance embedded
+    // CRITICAL: Negative constraints - DO NOT CHANGE VIEW
+    'DO NOT change camera angle',
+    'DO NOT rotate object from specified view',
+    'DO NOT change perspective or viewpoint',
+    'DO NOT reposition object',
+    'DO NOT use different camera position',
     'single isolated object only',
     'no other objects in scene',
     'no props',
     'no decorations',
-    'centered composition'
+    'no people',
+    'no text',
+    'centered composition',
+    'clean background',
+    'no shadows on background',
+    'professional quality'
   ].filter(Boolean).join(', ');
 
   // Build the JSON parameters - FIBO native format
@@ -271,24 +301,22 @@ const buildFiboJsonParams = (
     // Scene control
     scene: {
       subject: objectName,
-      subject_description: `${objectColorName} ${objectName}, ${objectOrientation}, isolated on ${bgColorName} background`,
+      subject_description: `${objectColorName} ${objectName}, ${objectOrientation}, isolated on ${bgColorName} background, viewed from ${horizontalView} at ${viewType}`,
       background: bgColorName,
       environment: "studio"
     },
 
     // Camera control - using exact values
-    // Map detailed positions back to FIBO-compatible values
     camera: {
-      angle: cameraAngle,
-      shot_type: shotType,
-      position: cameraPosition.includes("side") ? "side" : 
-                cameraPosition.includes("three_quarter") ? "three_quarter" : cameraPosition
+      angle: viewType,
+      shot_type: distance < 3 ? "close_up" : distance < 5 ? "medium_shot" : distance < 8 ? "full_shot" : "wide_shot",
+      position: horizontalView
     },
 
     // Lighting control
     lighting: {
-      type: getLightingType(),
-      direction: getLightingDirection(),
+      type: config.lighting.keyLightIntensity > 1.5 ? "dramatic" : config.lighting.keyLightIntensity < 0.5 ? "soft" : "studio",
+      direction: "front",
       intensity: config.lighting.keyLightIntensity > 1 ? "high" : "medium",
       color_temperature: "neutral"
     },

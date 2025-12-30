@@ -23,16 +23,58 @@ router.post('/generate-fibo', optionalAuth, async (req, res) => {
     if (falApiKey) {
       console.log('Trying FAL.ai FIBO API...');
       try {
-        const falResponse = await fetch('https://api.fal.ai/queue/bria/fibo/generate', {
+        // Build comprehensive prompt with all the JSON parameters
+        let fullPrompt = req.body.prompt || "A simple object";
+        
+        // CRITICAL: Enforce camera angle at the beginning
+        fullPrompt = `[CRITICAL CAMERA CONSTRAINT] ${fullPrompt}`;
+        
+        // Add scene context if available
+        if (req.body.scene) {
+          fullPrompt = `${fullPrompt}. Scene: ${JSON.stringify(req.body.scene)}`;
+        }
+        
+        // Add camera context if available - EMPHASIZE THIS
+        if (req.body.camera) {
+          fullPrompt = `${fullPrompt}. [ENFORCE CAMERA ANGLE] Camera settings: ${JSON.stringify(req.body.camera)}. DO NOT DEVIATE FROM THIS CAMERA ANGLE.`;
+        }
+        
+        // Add lighting context if available
+        if (req.body.lighting) {
+          fullPrompt = `${fullPrompt}. Lighting: ${JSON.stringify(req.body.lighting)}`;
+        }
+        
+        // Add composition context if available
+        if (req.body.composition) {
+          fullPrompt = `${fullPrompt}. Composition: ${JSON.stringify(req.body.composition)}`;
+        }
+        
+        // Add style context if available
+        if (req.body.style) {
+          fullPrompt = `${fullPrompt}. Style: ${JSON.stringify(req.body.style)}`;
+        }
+        
+        // Add color palette if available
+        if (req.body.color_palette) {
+          fullPrompt = `${fullPrompt}. Colors: ${JSON.stringify(req.body.color_palette)}`;
+        }
+
+        console.log('FAL.ai Full Prompt:', fullPrompt);
+
+        // Use the correct FAL.ai endpoint for FIBO
+        const falResponse = await fetch('https://api.fal.ai/queue/bria-fibo/generate', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Key ${falApiKey}`
           },
           body: JSON.stringify({
-            prompt: req.body.prompt || "A simple object",
+            prompt: fullPrompt,
             num_images: req.body.num_results || 1,
-            enable_safety_checker: false
+            enable_safety_checker: false,
+            // Pass through any additional FIBO parameters
+            ...(req.body.seed && { seed: req.body.seed }),
+            ...(req.body.guidance_scale && { guidance_scale: req.body.guidance_scale })
           })
         });
 
